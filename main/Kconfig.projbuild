@@ -1,0 +1,48 @@
+menu "Brain Dumper"
+
+    comment "These are only defaults: /sdcard/config.ini overrides every one of them"
+
+    config BD_WIFI_SSID
+        string "Default Wi-Fi SSID"
+        default ""
+
+    config BD_WIFI_PASSWORD
+        string "Default Wi-Fi password"
+        default ""
+
+    config BD_STT_URL
+        string "Default STT endpoint"
+        default "http://192.168.1.10:8000/v1/audio/transcriptions"
+        help
+            OpenAI-compatible transcription endpoint. Known-good servers:
+            whisper.cpp `server`, Speaches / faster-whisper-server, LocalAI.
+
+    config BD_STT_MODEL
+        string "Default STT model name"
+        default "Systran/faster-whisper-small"
+
+    config BD_STT_LANGUAGE
+        string "Default transcription language (ISO 639-1, empty = autodetect)"
+        default "it"
+
+    config BD_TIMEZONE
+        string "POSIX timezone string"
+        default "CET-1CEST,M3.5.0,M10.5.0/3"
+
+    config BD_NTP_SERVER
+        string "NTP server"
+        default "pool.ntp.org"
+
+    config BD_IDLE_SLEEP_S
+        int "Seconds of inactivity before deep sleep (0 = never)"
+        default 120
+
+    config BD_WAKE_INTERVAL_MIN
+        int "Minutes between RTC wake-ups to drain the transcription queue"
+        default 60
+
+    config BD_MAX_RECORD_S
+        int "Maximum length of a single recording, in seconds"
+        default 600
+
+endmenu
