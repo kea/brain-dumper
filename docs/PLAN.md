@@ -109,6 +109,11 @@ sparisce un'intera classe di bug da widget stantii.
 
 ## 3. Stato attuale
 
+> **Nota.** Questa sezione fotografa il bring-up iniziale ed e' stata superata
+> dai fatti: microSD, audio, Wi-Fi e catena STT funzionano. Lo stato corrente e'
+> nel [README](../README.md); i problemi risolti lungo la strada, con le
+> relative diagnosi, stanno in [ARCHITECTURE.md](ARCHITECTURE.md).
+
 Compila pulito su ESP-IDF 5.5.4 (1,22 MB di flash su 6 MB di partizione,
 ~8,4 MB di heap libero fra RAM interna e PSRAM). **Provato sulla scheda**:
 il firmware arriva a regime senza reboot.
@@ -121,8 +126,8 @@ il firmware arriva a regime senza reboot.
 | SHTC3 | ✅ risponde, `id=0x0887` |
 | ES8311 | ✅ `Work in Slave mode` |
 | e-Paper | ⚠️ init completo in 2,2 s con BUSY che scende regolarmente — **l'immagine va guardata a occhio** |
-| microSD | ❌ nessuna risposta a `send_op_cond` |
-| Wi-Fi / STT | ⏳ non ancora provabile: serve `config.ini` sulla scheda |
+| microSD | ✅ risolto: era la scheda, non il firmware — vedi sotto |
+| Wi-Fi / STT | ✅ verificato contro Speaches, trascrizione end-to-end |
 
 ### La microSD
 
@@ -141,8 +146,10 @@ scheda non risponde nemmeno al primo comando. Diagnosi fatta:
    flashato tale e quale su questa scheda, fallisce in modo identico
    (`card_host == NULL`).
 
-Resta il lato fisico: scheda non inserita o non scattata in sede, contatti
-sporchi, oppure una card che l'host non digerisce. Da provare, in ordine:
+**Epilogo: era il lato fisico**, come sospettato — la scheda ora monta
+regolarmente (`SD mounted at 40000 kHz`). Restava infatti da escludere: scheda
+non inserita o non scattata in sede, contatti sporchi, oppure una card che
+l'host non digerisce. Da provare, in ordine:
 una microSD **SDHC da 4–32 GB formattata FAT32**, reinserita fino allo scatto.
 Le SDXC oltre i 64 GB in exFAT non vengono montate, e le SDUC non sono
 supportate affatto.
