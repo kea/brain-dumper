@@ -1,5 +1,7 @@
 #include "shtc3.h"
 
+#include <math.h>
+
 #include "board.h"
 #include "esp_check.h"
 #include "esp_log.h"
@@ -24,6 +26,13 @@ static const char *TAG = "shtc3";
 #define SELF_HEATING_OFFSET_C 4.0f
 
 static i2c_master_dev_handle_t s_dev;
+
+/* Last good measurement. The read sequence is wake / measure / sleep across
+ * three I2C transactions, so it cannot be run from two tasks at once; anything
+ * that only wants a recent number - the web server's status page - reads this
+ * instead of touching the bus. */
+static float s_last_t = NAN;
+static float s_last_rh = NAN;
 
 static esp_err_t send_cmd(uint16_t cmd)
 {
@@ -104,11 +113,25 @@ esp_err_t shtc3_read(float *temp_c, float *humidity_pct)
     uint16_t rt = (uint16_t)((raw[0] << 8) | raw[1]);
     uint16_t rh = (uint16_t)((raw[3] << 8) | raw[4]);
 
+    s_last_t  = 175.0f * rt / 65536.0f - 45.0f - SELF_HEATING_OFFSET_C;
+    s_last_rh = 100.0f * rh / 65536.0f;
+
     if (temp_c) {
-        *temp_c = 175.0f * rt / 65536.0f - 45.0f - SELF_HEATING_OFFSET_C;
+        *temp_c = s_last_t;
     }
     if (humidity_pct) {
-        *humidity_pct = 100.0f * rh / 65536.0f;
+        *humidity_pct = s_last_rh;
     }
     return ESP_OK;
+}
+
+bool shtc3_last(float *temp_c, float *humidity_pct)
+{
+    if (temp_c) {
+        *temp_c = s_last_t;
+    }
+    if (humidity_pct) {
+        *humidity_pct = s_last_rh;
+    }
+    return !isnan(s_last_t);
 }

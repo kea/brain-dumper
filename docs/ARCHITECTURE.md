@@ -19,6 +19,7 @@ no global lock other than LVGL's.
 | `lvgl` | 1 | 4 | `lv_timer_handler()`, and the panel flush inside it |
 | `stt_sync` | any | 3 | clock sync and the transcription queue |
 | `rec` / `play` | 0 | 7 | audio streaming to and from the card |
+| `httpd` | any | 5 | the LAN web server, one request at a time |
 
 Audio sits at the highest priority on the other core: a dropped I2S buffer is
 an audible defect in a recording that cannot be re-taken, while a late screen
@@ -115,6 +116,56 @@ the glass**, arm or stop the RTC countdown, stop Wi-Fi, put the panel in its
 own deep sleep with a proper power-down sequence, cut the panel and audio
 rails, hold the enable pads, then `esp_deep_sleep_start()`. Wake sources are
 BOOT, PWR and the RTC alarm line, all ext1 active-low.
+
+## The web server
+
+`components/web` puts an `esp_http_server` on port 80 whenever the radio has an
+address, and takes it down again when the association drops. It is armed from
+`app_main()` on the UI boot path only: `headless_sync()` exists to drain the
+queue and go back to sleep, not to answer a browser nobody is holding.
+
+The whole front end is one HTML file embedded in the binary. It fetches nothing
+from the internet — no font, no script, no stylesheet — because the phone
+reading it is on a network whose route to the internet is not this project's
+business, and may not exist.
+
+Three constraints shaped the rest of it.
+
+**The catalogue moves under the reader.** `notes_at()` and `notes_by_id()` hand
+back pointers into the array, and a delete `memmove()`s everything after the
+hole. That is safe for the app task, which owns both the UI and every delete it
+performs; it is not safe for a second task. The server uses `notes_get()` and
+`notes_snapshot()` instead, which copy under the catalogue's own lock. The list
+route allocates a snapshot in PSRAM, because 512 notes of JSON is far more than
+one buffer's worth and the array must not be walked while a socket blocks.
+
+**The card belongs to the recorder first.** Reading a 19 MB WAV over a one-bit
+SDMMC bus while the recorder is writing to the same card is how an I2S buffer
+gets dropped, and a dropped buffer is an audible hole in a recording nobody can
+take again. Every route that touches the card answers 503 while audio is
+running — and there is nothing to serve at all while the card is on loan to USB
+transfer, which `storage_mounted()` already reports.
+
+**Files need a real `Content-Length`.** `httpd_resp_send_chunk()` always
+declares `Transfer-Encoding: chunked`, and a chunked `audio/wav` is a file
+Safari will play from the start and refuse to seek in. Files therefore go out
+through `httpd_send()` with a header block written by hand, which also makes
+`Range` requests answerable — the page's scrub bar is a range request, so the
+two requirements are the same requirement.
+
+Sleep is the last piece. `web_idle_ms()` reports how long ago the last request
+was served, and `maybe_sleep()` holds the device up for two minutes after it.
+The page deliberately does not poll: a tab left open on a bedside table would
+otherwise keep the radio alive all night, which is exactly the battery this
+device spends its design budget protecting. Refreshing is a tap on the status
+bar. `web_change_seq()` runs the other way, so a note deleted from a phone
+leaves the device's own list on the next frame instead of sitting there as a
+row that opens onto nothing.
+
+There is no authentication, and adding one would be the wrong shape: a device
+with two buttons cannot enrol a credential, and a shared secret in `config.ini`
+is a plaintext password on a removable card. The honest control is the one that
+exists — `web_enable=0`.
 
 ## USB
 

@@ -45,4 +45,15 @@ menu "Brain Dumper"
         int "Maximum length of a single recording, in seconds"
         default 600
 
+    config BD_WEB_ENABLE
+        bool "Serve the web UI and JSON API on the local network"
+        default y
+        help
+            Puts an HTTP server on port 80 whenever the device is awake and
+            associated: the note list, transcripts, WAV downloads, delete, and
+            a status document, plus a single-page front end for all of it.
+
+            There is no authentication. Anyone who can reach the device on your
+            network can read and delete every note on the card.
+
 endmenu

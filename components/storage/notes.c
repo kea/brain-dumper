@@ -212,6 +212,28 @@ const note_t *notes_by_id(uint32_t id)
     return (i < 0) ? NULL : &s_notes[i];
 }
 
+bool notes_get(uint32_t id, note_t *out)
+{
+    lock();
+    int i = notes_index_of(id);
+    if (i >= 0) {
+        *out = s_notes[i];
+    }
+    unlock();
+    return i >= 0;
+}
+
+int notes_snapshot(note_t *out, int max)
+{
+    lock();
+    int n = (s_count < max) ? s_count : max;
+    if (n > 0) {
+        memcpy(out, s_notes, (size_t)n * sizeof(note_t));
+    }
+    unlock();
+    return n;
+}
+
 esp_err_t notes_create(note_t *out)
 {
     ESP_RETURN_ON_FALSE(storage_mounted(), ESP_ERR_INVALID_STATE, TAG, "no card");

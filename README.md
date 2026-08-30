@@ -16,9 +16,10 @@ which is the constraint that shapes everything else in this project.
 Running on hardware. Verified end to end: boot on 8 MB flash + 8 MB octal
 PSRAM, e-paper rendering, microSD mount, RTC and ambient sensor, ES8311 codec,
 Wi-Fi association, NTP time sync with RTC write-back, transcription against a
-local server, USB mass-storage transfer and return, deep sleep and wake.
+local server, USB mass-storage transfer and return, the web UI from a phone on
+the local network, deep sleep and wake.
 
-Firmware size is ~1.36 MB in a 6 MB application partition, so there is room to
+Firmware size is ~1.42 MB in a 6 MB application partition, so there is room to
 grow.
 
 ## Hardware
@@ -70,6 +71,7 @@ and **never overwrites an existing file**. A reference copy is in
 | `idle_sleep_s` | inactivity before deep sleep; `0` disables |
 | `wake_interval_min` | minutes between unattended RTC wake-ups |
 | `max_record_s` | hard cap on a single recording |
+| `web_enable` | `0` turns off the web UI and its API |
 
 To edit it without a card reader, use **Menu → USB transfer**: the microSD
 appears on your PC as a disk. Eject it there, then press BOOT to reboot.
@@ -124,6 +126,46 @@ Recording is deliberately one gesture away from everywhere: a voice-note device
 that makes you navigate first has already lost the thought you wanted to catch.
 A note shorter than 700 ms is discarded as a mis-touch.
 
+## From your phone
+
+While the device is awake and on your network it serves a small page at
+**`http://<its-ip>/`**. The address is on the device itself, under *Menu →
+Info*.
+
+The page is the list of notes, each with its transcript, a player, a WAV and a
+TXT download, and a delete. The header is the device's own status bar — clock,
+battery, signal, free space, ambient reading, transcription queue — so opening
+the page answers *is it alive and has it done its work* before you read a word.
+
+Two things follow from what this device is, and both are deliberate:
+
+- **It only answers while the device is awake.** On battery the radio goes down
+  with the rest of the board after `idle_sleep_s`, and only a button on the
+  device brings it back. Requests hold sleep off for two minutes each, so a
+  page you are actively reading stays reachable; a tab left open in a pocket
+  does not. The page never polls for the same reason — refreshing is a tap on
+  the status bar.
+- **There is no password.** Anyone who can reach the device on your network can
+  read and delete every note on the card. That is the same trust boundary as
+  the microSD itself, but it is a real one: `web_enable=0` in `config.ini` if
+  you would rather not extend it.
+
+Whatever is not the page is a small JSON API, which is the same thing a script
+would use:
+
+| | |
+|---|---|
+| `GET /api/status` | battery, radio, card, queue, sensors, uptime |
+| `GET /api/notes` | the catalogue, newest first |
+| `GET /api/notes/<id>` | one entry |
+| `GET /api/notes/<id>/text` | the transcript, UTF-8 |
+| `GET /api/notes/<id>/audio` | the WAV, with byte ranges so it seeks |
+| `DELETE /api/notes/<id>` | removes all three files |
+
+Add `?dl=1` to either file route to get it as a download rather than inline.
+Anything that touches the card answers **503** while the device is recording or
+playing, and while the card is on loan to USB transfer.
+
 ## On the card
 
 ```
@@ -166,6 +208,7 @@ components/
   storage/     SD mount, config.ini parser, note catalogue
   audio/       ES8311 capture to WAV, playback, VU metering
   net/         Wi-Fi STA, SNTP, STT client
+  web/         LAN HTTP server, JSON API, the page embedded in flash
   usb_msc/     USB mass-storage transfer mode
 ```
 

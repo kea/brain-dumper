@@ -14,3 +14,7 @@ esp_err_t shtc3_init(void);
 /* Wakes the sensor, takes one measurement, puts it back to sleep (~1 uA).
  * Takes about 25 ms. */
 esp_err_t shtc3_read(float *temp_c, float *humidity_pct);
+
+/* The last successful reading, without going near the bus. False, and NAN in
+ * both outputs, until the first shtc3_read() succeeds. */
+bool shtc3_last(float *temp_c, float *humidity_pct);

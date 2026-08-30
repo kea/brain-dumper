@@ -25,6 +25,7 @@
 #include "stt.h"
 #include "ui.h"
 #include "ui_port.h"
+#include "web.h"
 
 static const char *TAG = "main";
 
@@ -139,6 +140,13 @@ void app_main(void)
 
     /* Non-blocking: the UI comes up immediately and the radio catches up. */
     net_start();
+
+    /* Only on this boot path. headless_sync() never gets here, which is the
+     * point: an unattended wake exists to drain the queue and go back to
+     * sleep, not to answer a browser nobody is holding. */
+    if (storage_config()->web_enable) {
+        web_init();
+    }
 
     ESP_ERROR_CHECK(app_start());
 

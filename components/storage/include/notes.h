@@ -56,6 +56,18 @@ const note_t *notes_at(int index);          /* 0 = newest */
 const note_t *notes_by_id(uint32_t id);
 int           notes_index_of(uint32_t id);
 
+/*
+ * The same lookups, but copied out under the catalogue lock.
+ *
+ * notes_at() and notes_by_id() hand back pointers straight into the array,
+ * which is safe for the app task that owns both the UI and every delete it
+ * performs. It is not safe for anyone else: a delete shifts every entry after
+ * it, so a pointer taken on another task can end up describing a different
+ * note. Tasks that do not own the catalogue take copies.
+ */
+bool notes_get(uint32_t id, note_t *out);
+int  notes_snapshot(note_t *out, int max);      /* returns entries written */
+
 /* Path helper. ext is "wav", "txt" or "ini". */
 void notes_path(uint32_t id, const char *ext, char *out, size_t out_len);
 

@@ -24,12 +24,24 @@
 #include "ui.h"
 #include "ui_port.h"
 #include "usb_msc.h"
+#include "web.h"
 
 static const char *TAG = "app";
 
 extern const int MENU_ITEM_COUNT;   /* defined next to the menu labels in ui.c */
 #define SETTINGS_ITEM_COUNT 6
 #define MIN_NOTE_MS         700
+
+/*
+ * How long a browser counts as present after its last request.
+ *
+ * The page does not poll - that would hold the radio up all night - so the
+ * quiet stretch while someone reads a long transcript has to be covered by a
+ * grace window instead. Two minutes matches the default idle_sleep_s: nobody
+ * loses a page they are still looking at, and a tab left open in a pocket
+ * costs at most one extra sleep cycle.
+ */
+#define WEB_GRACE_MS (2 * 60 * 1000)
 
 static app_model_t   s_m;
 static TaskHandle_t  s_sync_task;
@@ -652,6 +664,17 @@ static bool tick(void)
         return true;
     }
 
+    /* A note deleted from a browser has to reach the glass too, or the list
+     * keeps offering a row that opens onto nothing. */
+    static uint32_t seen_change;
+    uint32_t change = web_change_seq();
+    if (change != seen_change) {
+        seen_change = change;
+        s_m.item_count = notes_count();
+        clamp_list();
+        return true;
+    }
+
     /* Idle: the clock in the status bar is the only thing that goes stale,
      * and a redraw costs 400 ms of panel time, so once a minute is plenty. */
     static uint32_t last_clock_ms;
@@ -669,6 +692,13 @@ static void maybe_sleep(void)
         return;
     }
     if (audio_state() != AUDIO_IDLE || usb_msc_active()) {
+        return;
+    }
+
+    /* Going dark on someone mid-browse is the one failure the page cannot
+     * recover from on its own: the device is gone and only a button on the
+     * device itself brings it back. */
+    if (web_idle_ms() < WEB_GRACE_MS) {
         return;
     }
 
@@ -712,6 +742,9 @@ static void maybe_sleep(void)
         pcf85063_stop_countdown();
     }
 
+    /* Before the radio, so a client that is still there gets a refused
+     * connection instead of a socket that never answers. */
+    web_stop();
     net_stop();
     epd_sleep();
     board_deep_sleep();

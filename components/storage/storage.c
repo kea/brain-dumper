@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 
 #include "board.h"
@@ -38,6 +39,14 @@ static void load_defaults(bd_config_t *cfg)
     cfg->idle_sleep_s = CONFIG_BD_IDLE_SLEEP_S;
     cfg->wake_interval_min = CONFIG_BD_WAKE_INTERVAL_MIN;
     cfg->max_record_s = CONFIG_BD_MAX_RECORD_S;
+    cfg->web_enable = CONFIG_BD_WEB_ENABLE;
+}
+
+/* "0", "no", "off" and "false" all mean off; anything else means on. */
+static bool parse_bool(const char *val)
+{
+    return !(!strcasecmp(val, "0") || !strcasecmp(val, "no") ||
+             !strcasecmp(val, "off") || !strcasecmp(val, "false"));
 }
 
 static char *trim(char *s)
@@ -91,6 +100,7 @@ static esp_err_t parse_config(void)
         else if (!strcmp(key, "idle_sleep_s"))      s_cfg.idle_sleep_s = (uint32_t)strtoul(val, NULL, 10);
         else if (!strcmp(key, "wake_interval_min")) s_cfg.wake_interval_min = (uint32_t)strtoul(val, NULL, 10);
         else if (!strcmp(key, "max_record_s"))      s_cfg.max_record_s = (uint32_t)strtoul(val, NULL, 10);
+        else if (!strcmp(key, "web_enable"))        s_cfg.web_enable = parse_bool(val);
         else { ESP_LOGW(TAG, "unknown config key '%s'", key); continue; }
         applied++;
     }
@@ -136,11 +146,15 @@ esp_err_t storage_write_default_config(void)
         "# Minutes between RTC wake-ups to drain the transcription queue.\n"
         "wake_interval_min=%u\n"
         "# Hard cap on a single recording, in seconds.\n"
-        "max_record_s=%u\n",
+        "max_record_s=%u\n"
+        "\n"
+        "# Web UI and JSON API on http://<device-ip>/ while the device is awake.\n"
+        "# There is no password: 0 turns it off.\n"
+        "web_enable=%u\n",
         s_cfg.wifi_ssid, s_cfg.wifi_pass, s_cfg.stt_url, s_cfg.stt_model,
         s_cfg.stt_lang, s_cfg.timezone, s_cfg.ntp_server,
         (unsigned)s_cfg.idle_sleep_s, (unsigned)s_cfg.wake_interval_min,
-        (unsigned)s_cfg.max_record_s);
+        (unsigned)s_cfg.max_record_s, (unsigned)s_cfg.web_enable);
     fclose(f);
     ESP_LOGI(TAG, "wrote template %s", CONFIG_PATH);
     return ESP_OK;

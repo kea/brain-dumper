@@ -25,6 +25,7 @@ typedef struct {
     uint32_t idle_sleep_s;                /* 0 disables the idle deep sleep */
     uint32_t wake_interval_min;           /* RTC countdown between sync wakes */
     uint32_t max_record_s;
+    bool     web_enable;                  /* LAN web UI + JSON API on port 80 */
 } bd_config_t;
 
 esp_err_t storage_init(void);
