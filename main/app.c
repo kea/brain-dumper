@@ -16,6 +16,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "i18n.h"
 #include "notes.h"
 #include "pcf85063.h"
 #include "shtc3.h"
@@ -101,6 +102,12 @@ static void go(app_state_t state)
     }
 }
 
+/*
+ * The banner is rendered from a copy rather than from the ids, because it
+ * outlives this call by a couple of seconds and the language can change under
+ * it (Settings -> Reload config). What the user was told stays what they were
+ * told until the banner goes.
+ */
 static void message(const char *line1, const char *line2, uint32_t ms)
 {
     snprintf(s_m.msg, sizeof(s_m.msg), "%s", line1 ? line1 : "");
@@ -151,7 +158,7 @@ static void load_note_text(uint32_t id)
 static void start_recording(void)
 {
     if (!storage_mounted()) {
-        message("Nessuna microSD", "Impossibile registrare", 2500);
+        message(tr(STR_MSG_NO_SD), tr(STR_MSG_CANNOT_RECORD), 2500);
         return;
     }
     if (audio_state() == AUDIO_PLAYING) {
@@ -163,7 +170,7 @@ static void start_recording(void)
 
     note_t note;
     if (notes_create(&note) != ESP_OK) {
-        message("Errore", "Creazione nota fallita", 2500);
+        message(tr(STR_MSG_ERROR), tr(STR_MSG_NOTE_CREATE_FAILED), 2500);
         return;
     }
 
@@ -181,7 +188,7 @@ static void start_recording(void)
 
     if (audio_record_start(path, storage_config()->max_record_s) != ESP_OK) {
         notes_delete(note.id);
-        message("Errore", "Microfono non disponibile", 2500);
+        message(tr(STR_MSG_ERROR), tr(STR_MSG_MIC_UNAVAILABLE), 2500);
         return;
     }
 
@@ -210,7 +217,7 @@ static void stop_recording(void)
 
     if (duration < MIN_NOTE_MS) {
         notes_delete(note.id);
-        message("Troppo breve", "Nota scartata", 2000);
+        message(tr(STR_MSG_TOO_SHORT), tr(STR_MSG_DISCARDED), 2000);
         return;
     }
 
@@ -344,7 +351,8 @@ static void open_menu_item(int index)
             if (s_sync_task) {
                 xTaskNotifyGive(s_sync_task);
             }
-            message("Sincronizzo", notes_pending_count() ? "in corso..." : "niente da fare", 2000);
+            message(tr(STR_MSG_SYNC),
+                    tr(notes_pending_count() ? STR_MSG_IN_PROGRESS : STR_MSG_NOTHING_TO_DO), 2000);
             break;
         case 2:
             go(ST_SETTINGS);
@@ -353,7 +361,7 @@ static void open_menu_item(int index)
             if (usb_msc_start() == ESP_OK) {
                 go(ST_TRANSFER);
             } else {
-                message("Errore", "microSD non disponibile", 2500);
+                message(tr(STR_MSG_ERROR), tr(STR_MSG_SD_UNAVAILABLE), 2500);
             }
             break;
         case 4:
@@ -389,7 +397,7 @@ static void activate_setting(int index)
         }
         case 2:
             net_start();
-            message("Wi-Fi", "connessione...", 2000);
+            message(tr(STR_MSG_WIFI), tr(STR_MSG_CONNECTING), 2000);
             break;
         case 3: {
             /* No card-detect line on this board, so a card inserted after
@@ -397,15 +405,18 @@ static void activate_setting(int index)
             esp_err_t err = storage_try_mount();
             if (err == ESP_OK) {
                 notes_reload();
-                message("microSD", "montata", 1800);
+                message(tr(STR_MSG_SD), tr(STR_MSG_MOUNTED), 1800);
             } else {
-                message("microSD", esp_err_to_name(err), 2500);
+                message(tr(STR_MSG_SD), esp_err_to_name(err), 2500);
             }
             break;
         }
         case 4:
+            /* config.ini carries the interface language, so a reload is also
+             * how the user switches it without a reboot. */
             storage_config_reload();
-            message("Config", "ricaricata", 1800);
+            i18n_set_lang(storage_config()->ui_lang);
+            message(tr(STR_MSG_CONFIG), tr(STR_MSG_RELOADED), 1800);
             break;
         case 5:
             board_power_off();
@@ -428,7 +439,7 @@ static void on_select(void)
 
         case ST_TAG_SELECT:
             notes_set_tag(s_m.note_id, NOTE_TAGS[s_m.sel]);
-            message("Salvata", NOTE_TAGS[s_m.sel], 1500);
+            message(tr(STR_MSG_SAVED), i18n_tag(NOTE_TAGS[s_m.sel]), 1500);
             s_m.prev_state = ST_HOME;
             break;
 
@@ -452,7 +463,7 @@ static void on_select(void)
             if (audio_play_start(path) == ESP_OK) {
                 go(ST_PLAYING);
             } else {
-                message("Errore", "Audio non disponibile", 2000);
+                message(tr(STR_MSG_ERROR), tr(STR_MSG_AUDIO_UNAVAILABLE), 2000);
             }
             break;
         }
@@ -467,7 +478,7 @@ static void on_select(void)
                 notes_delete(s_m.note_id);
                 notes_reload();
                 s_m.item_count = notes_count();
-                message("Eliminata", NULL, 1500);
+                message(tr(STR_MSG_DELETED), NULL, 1500);
                 s_m.prev_state = ST_NOTE_LIST;
             } else {
                 go(ST_NOTE_LIST);

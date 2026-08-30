@@ -20,6 +20,7 @@ typedef struct {
     char     stt_key[BD_CFG_STR_MAX];     /* optional bearer token */
     char     stt_model[BD_CFG_STR_MAX];
     char     stt_lang[8];                 /* ISO-639-1, "" = autodetect */
+    char     ui_lang[8];                  /* interface language: en, fr, de, es, it */
     char     timezone[BD_CFG_STR_MAX];    /* POSIX TZ string */
     char     ntp_server[BD_CFG_STR_MAX];
     uint32_t idle_sleep_s;                /* 0 disables the idle deep sleep */

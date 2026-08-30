@@ -12,6 +12,7 @@
 #include "epd.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "i18n.h"
 #include "storage.h"
 #include "ui_port.h"
 
@@ -51,18 +52,39 @@ static const char *TAG = "ui";
  * assumption here that the firmware cannot check for itself; every hint is
  * derived from these two lines, so swapping them flips the whole UI.
  *
- * The arrows identify a button, they do not indicate a direction — so no hint
- * pairs them with a word like "su" or "giu" that would invite the other
- * reading.
+ * The arrows identify a button, they do not indicate a direction - so no hint
+ * pairs them with a word like "up" or "down" that would invite the other
+ * reading. The same rule holds in every translation.
  */
 #define GLYPH_BOOT LV_SYMBOL_UP     /* BOOT is the upper button */
 #define GLYPH_PWR  LV_SYMBOL_DOWN   /* PWR is the lower one */
 
-#define B_CLICK    GLYPH_BOOT
-#define B_DOUBLE   GLYPH_BOOT GLYPH_BOOT
-#define B_LONG     GLYPH_BOOT " lungo"
-#define P_CLICK    GLYPH_PWR
-#define P_LONG     GLYPH_PWR " lungo"
+/*
+ * Hints are composed at render time now that the words come from a table: the
+ * glyph and its label meet in a buffer rather than in a string literal. Four
+ * slots is one more than any screen puts on the bar at once, and they are only
+ * ever read by the render pass that just filled them.
+ */
+#define HINT_BUF_LEN 48
+
+static const char *hint_of(const char *glyph, bool longpress, bd_str_t label)
+{
+    static char buf[4][HINT_BUF_LEN];
+    static unsigned next;
+
+    char *b = buf[next++ % 4];
+    if (longpress) {
+        snprintf(b, HINT_BUF_LEN, "%s %s: %s", glyph, tr(STR_HINT_LONG), tr(label));
+    } else {
+        snprintf(b, HINT_BUF_LEN, "%s %s", glyph, tr(label));
+    }
+    return b;
+}
+
+#define B_CLICK(id)   hint_of(GLYPH_BOOT, false, (id))
+#define B_DOUBLE(id)  hint_of(GLYPH_BOOT GLYPH_BOOT, false, (id))
+#define B_LONG(id)    hint_of(GLYPH_BOOT, true, (id))
+#define P_CLICK(id)   hint_of(GLYPH_PWR, false, (id))
 
 static lv_obj_t *s_screen;
 static lv_obj_t *s_status;
@@ -139,18 +161,16 @@ static void load_ttf(void)
     }
 }
 
-/* Fold the Latin-1 supplement down to ASCII, in place, UTF-8 aware. */
+/*
+ * Fold to ASCII in place, UTF-8 aware. Which ASCII a code point folds to is a
+ * language question - "e'" in Italian, "oe" in German - so i18n owns the map
+ * and this only walks the encoding.
+ *
+ * No replacement is longer than the sequence it replaces, so folding never
+ * grows the string and the write pointer can never overtake the read one.
+ */
 static void fold_ascii(char *s)
 {
-    static const struct { uint16_t cp; const char *ascii; } map[] = {
-        { 0xE0, "a'" }, { 0xE1, "a'" }, { 0xE2, "a" },  { 0xE8, "e'" },
-        { 0xE9, "e'" }, { 0xEA, "e" },  { 0xEC, "i'" }, { 0xED, "i'" },
-        { 0xEE, "i" },  { 0xF2, "o'" }, { 0xF3, "o'" }, { 0xF4, "o" },
-        { 0xF9, "u'" }, { 0xFA, "u'" }, { 0xFB, "u" },  { 0xE7, "c" },
-        { 0xF1, "n" },  { 0xC0, "A'" }, { 0xC8, "E'" }, { 0xC9, "E'" },
-        { 0xCC, "I'" }, { 0xD2, "O'" }, { 0xD9, "U'" },
-    };
-
     char *r = s, *w = s;
     while (*r) {
         unsigned char c = (unsigned char)*r;
@@ -159,14 +179,8 @@ static void fold_ascii(char *s)
             continue;
         }
         if ((c & 0xE0) == 0xC0 && (r[1] & 0xC0) == 0x80) {
-            uint16_t cp = (uint16_t)(((c & 0x1F) << 6) | (r[1] & 0x3F));
-            const char *rep = NULL;
-            for (size_t i = 0; i < sizeof(map) / sizeof(map[0]); i++) {
-                if (map[i].cp == cp) {
-                    rep = map[i].ascii;
-                    break;
-                }
-            }
+            uint32_t cp = (uint32_t)(((c & 0x1F) << 6) | (r[1] & 0x3F));
+            const char *rep = i18n_fold_cp(cp);
             r += 2;
             if (rep) {
                 while (*rep) {
@@ -185,6 +199,36 @@ static void fold_ascii(char *s)
         *w++ = '?';
     }
     *w = '\0';
+}
+
+/*
+ * Every string that reaches the glass goes through here.
+ *
+ * With a TTF on the card the panel has full UTF-8 and the text is passed
+ * straight through; without one the built-in Montserrat stops at 0x7F, and
+ * that is true of a German menu label just as much as of a transcript, so the
+ * fold belongs at the single point they all pass rather than at each call
+ * site. LVGL copies the text, so the buffer only has to outlive this call.
+ */
+static void set_text(lv_obj_t *label, const char *str)
+{
+    if (s_unicode_ok) {
+        lv_label_set_text(label, str);
+        return;
+    }
+    char stack[192];
+    size_t len = strlen(str) + 1;
+    char *buf = (len <= sizeof(stack)) ? stack : malloc(len);
+    if (!buf) {
+        lv_label_set_text(label, str);   /* a transcript with holes beats none */
+        return;
+    }
+    memcpy(buf, str, len);
+    fold_ascii(buf);
+    lv_label_set_text(label, buf);
+    if (buf != stack) {
+        free(buf);
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -206,7 +250,7 @@ static lv_obj_t *text(lv_obj_t *parent, const char *str, const lv_font_t *font)
     lv_obj_t *l = lv_label_create(parent);
     lv_obj_set_style_text_font(l, font, 0);
     lv_obj_set_style_text_color(l, lv_color_black(), 0);
-    lv_label_set_text(l, str);
+    set_text(l, str);
     return l;
 }
 
@@ -232,7 +276,7 @@ static void row(lv_obj_t *parent, const char *label, bool selected,
      * row spills over the ones below it. */
     lv_obj_set_width(l, lv_pct(100));
     lv_obj_set_height(l, ROW_H);
-    lv_label_set_text(l, label);
+    set_text(l, label);
     lv_obj_align(l, LV_ALIGN_LEFT_MID, 0, 0);
 }
 
@@ -362,8 +406,8 @@ static void render_home(const app_model_t *m)
     centered(s_body, "BRAIN\nDUMPER", s_font_big, 6);
 
     if (!m->sd_ok) {
-        centered(s_body, "Nessuna\nmicroSD", s_font_ui, 84);
-        hint(B_CLICK " menu", "");
+        centered(s_body, tr(STR_NO_SD_2LINE), s_font_ui, 84);
+        hint(B_CLICK(STR_HINT_MENU), "");
         return;
     }
 
@@ -371,13 +415,16 @@ static void render_home(const app_model_t *m)
      * answer, and they used to be set in the two smallest sizes on the panel.
      * The room came from dropping the temperature line: it is still recorded
      * with every note, which is where it is actually worth something. */
-    snprintf(line, sizeof(line), "%d note", notes_count());
+    /* Two plural forms is all any of the five languages needs here. */
+    snprintf(line, sizeof(line),
+             tr(notes_count() == 1 ? STR_NOTES_ONE_FMT : STR_NOTES_MANY_FMT),
+             notes_count());
     centered(s_body, line, s_font_med, 84);
 
     if (m->pending > 0) {
-        snprintf(line, sizeof(line), "%d da trascrivere", m->pending);
+        snprintf(line, sizeof(line), tr(STR_PENDING_FMT), m->pending);
     } else if (notes_count() > 0) {
-        snprintf(line, sizeof(line), "tutte trascritte");
+        snprintf(line, sizeof(line), "%s", tr(STR_ALL_TRANSCRIBED));
     } else {
         line[0] = '\0';
     }
@@ -385,7 +432,7 @@ static void render_home(const app_model_t *m)
         centered(s_body, line, s_font_ui, 114);
     }
 
-    hint(B_LONG ": REC", B_CLICK " menu");
+    hint(B_LONG(STR_HINT_REC), B_CLICK(STR_HINT_MENU));
 }
 
 static void render_recording(const app_model_t *m)
@@ -393,7 +440,7 @@ static void render_recording(const app_model_t *m)
     char buf[16];
     fmt_duration(buf, sizeof(buf), m->rec_ms);
 
-    centered(s_body, "REC", s_font_ui, 6);
+    centered(s_body, tr(STR_REC), s_font_ui, 6);
     centered(s_body, buf, s_font_big, 32);
 
     /* A coarse VU bar: seven blocks is all a 1-bit panel can show honestly,
@@ -422,37 +469,51 @@ static void render_recording(const app_model_t *m)
     lv_obj_set_style_bg_opa(fill, LV_OPA_COVER, 0);
     lv_obj_set_style_bg_color(fill, lv_color_black(), 0);
 
-    hint(B_LONG ": stop", "");
+    hint(B_LONG(STR_HINT_STOP), "");
 }
 
 static void render_tag_select(const app_model_t *m)
 {
-    header("Etichetta");
-    render_rows(s_body, LIST_Y, NOTE_TAGS, NOTE_TAG_COUNT, m->sel, m->top);
-    hint(B_CLICK " ok", P_CLICK " scorri");
+    /* NOTE_TAGS holds what gets written to the card; only the display is
+     * translated, so a card stays readable whatever the device is set to. */
+    const char *items[NOTE_TAGS_MAX];
+    int count = NOTE_TAG_COUNT < NOTE_TAGS_MAX ? NOTE_TAG_COUNT : NOTE_TAGS_MAX;
+    for (int i = 0; i < count; i++) {
+        items[i] = i18n_tag(NOTE_TAGS[i]);
+    }
+
+    header(tr(STR_TAG_TITLE));
+    render_rows(s_body, LIST_Y, items, count, m->sel, m->top);
+    hint(B_CLICK(STR_HINT_OK), P_CLICK(STR_HINT_SCROLL));
 }
 
-static const char *const MENU_ITEMS[] = {
-    "Note", "Sincronizza", "Impostazioni", "Trasferim. USB", "Info",
+/* The order here is the order app.c's open_menu_item() switches on. */
+static const bd_str_t MENU_ITEMS[] = {
+    STR_MENU_NOTES, STR_MENU_SYNC, STR_MENU_SETTINGS, STR_MENU_TRANSFER, STR_MENU_INFO,
 };
 const int MENU_ITEM_COUNT = sizeof(MENU_ITEMS) / sizeof(MENU_ITEMS[0]);
 
 static void render_menu(const app_model_t *m)
 {
-    header("Menu");
-    render_rows(s_body, LIST_Y, MENU_ITEMS, MENU_ITEM_COUNT, m->sel, m->top);
-    hint(B_CLICK " apri", P_CLICK " scorri");
+    const char *items[sizeof(MENU_ITEMS) / sizeof(MENU_ITEMS[0])];
+    for (int i = 0; i < MENU_ITEM_COUNT; i++) {
+        items[i] = tr(MENU_ITEMS[i]);
+    }
+
+    header(tr(STR_MENU_TITLE));
+    render_rows(s_body, LIST_Y, items, MENU_ITEM_COUNT, m->sel, m->top);
+    hint(B_CLICK(STR_HINT_OPEN), P_CLICK(STR_HINT_SCROLL));
 }
 
 static void render_note_list(const app_model_t *m)
 {
-    char head[32];
-    snprintf(head, sizeof(head), "Note (%d)", m->item_count);
+    char head[48];
+    snprintf(head, sizeof(head), "%s (%d)", tr(STR_MENU_NOTES), m->item_count);
     header(head);
 
     if (m->item_count == 0) {
-        centered(s_body, "Nessuna nota", s_font_ui, 80);
-        hint(B_DOUBLE " esci", "");
+        centered(s_body, tr(STR_NO_NOTES), s_font_ui, 80);
+        hint(B_DOUBLE(STR_HINT_BACK), "");
         return;
     }
 
@@ -471,20 +532,17 @@ static void render_note_list(const app_model_t *m)
         const char *mark = (n->stt == NOTE_STT_DONE) ? "" :
                            (n->stt == NOTE_STT_FAILED) ? "! " : "~ ";
         snprintf(label, sizeof(label), "%s%s %s", mark, dur, n->title);
-        if (!s_unicode_ok) {
-            fold_ascii(label);
-        }
         row(list, label, i == m->sel, s_font_list);
     }
-    hint(B_CLICK " apri", P_CLICK " scorri");
+    hint(B_CLICK(STR_HINT_OPEN), P_CLICK(STR_HINT_SCROLL));
 }
 
 static void render_note_detail(const app_model_t *m)
 {
     const note_t *n = notes_by_id(m->note_id);
     if (!n) {
-        centered(s_body, "Nota non trovata", s_font_ui, 80);
-        hint(B_DOUBLE " esci", "");
+        centered(s_body, tr(STR_NOTE_NOT_FOUND), s_font_ui, 80);
+        hint(B_DOUBLE(STR_HINT_BACK), "");
         return;
     }
 
@@ -497,7 +555,7 @@ static void render_note_detail(const app_model_t *m)
 
     char dur[12];
     fmt_duration(dur, sizeof(dur), n->duration_ms);
-    snprintf(head, sizeof(head), "%s %s %s", when, dur, n->tag);
+    snprintf(head, sizeof(head), "%s %s %s", when, dur, i18n_tag(n->tag));
 
     lv_obj_t *h = text(s_body, head, s_font_small);
     lv_obj_align(h, LV_ALIGN_TOP_LEFT, 3, HEAD_Y);
@@ -507,16 +565,9 @@ static void render_note_detail(const app_model_t *m)
     lv_obj_set_size(box, lv_pct(100), TEXT_H);
     lv_obj_align(box, LV_ALIGN_TOP_MID, 0, TEXT_Y);
 
-    const char *content;
-    char empty[72];
-    if (m->text_len > 0) {
-        content = m->text;
-    } else {
-        snprintf(empty, sizeof(empty), "%s",
-                 n->stt == NOTE_STT_FAILED ? "Trascrizione fallita.\nRiprova con Sincronizza."
-                                           : "In attesa di\ntrascrizione.");
-        content = empty;
-    }
+    const char *content = (m->text_len > 0)
+        ? m->text
+        : tr(n->stt == NOTE_STT_FAILED ? STR_STT_FAILED_LONG : STR_STT_WAITING);
 
     lv_obj_t *l = text(box, content, s_font_text);
     lv_label_set_long_mode(l, LV_LABEL_LONG_MODE_WRAP);
@@ -525,7 +576,7 @@ static void render_note_detail(const app_model_t *m)
      * up by whole pages is the cheapest scroll an e-paper can afford. */
     lv_obj_align(l, LV_ALIGN_TOP_LEFT, 3, -(m->text_page * TEXT_PAGE));
 
-    hint(B_CLICK " play", P_CLICK " pagina");
+    hint(B_CLICK(STR_HINT_PLAY), P_CLICK(STR_HINT_PAGE));
 }
 
 static void render_playing(const app_model_t *m)
@@ -551,50 +602,49 @@ static void render_playing(const app_model_t *m)
     lv_obj_set_style_bg_opa(fill, LV_OPA_COVER, 0);
     lv_obj_set_style_bg_color(fill, lv_color_black(), 0);
 
-    hint(B_CLICK " stop", "");
+    hint(B_CLICK(STR_HINT_STOP), "");
 }
-
-static const char *const CONFIRM_ITEMS[] = { "Annulla", "Elimina" };
 
 static void render_delete_confirm(const app_model_t *m)
 {
     const note_t *n = notes_by_id(m->note_id);
-    centered(s_body, "Eliminare?", s_font_big, 10);
+    const char *confirm[] = { tr(STR_CANCEL), tr(STR_DELETE) };
+
+    centered(s_body, tr(STR_DELETE_Q), s_font_big, 10);
     if (n) {
-        char title[NOTE_TITLE_MAX + 8];
-        snprintf(title, sizeof(title), "%s", n->title);
-        if (!s_unicode_ok) {
-            fold_ascii(title);
-        }
         /* The title is transcript text, so it needs the card font here too. */
-        centered(s_body, title, s_font_text, 52);
+        centered(s_body, n->title, s_font_text, 52);
     }
-    render_rows(s_body, 110, CONFIRM_ITEMS, 2, m->sel, 0);
-    hint(B_CLICK " ok", P_CLICK " scegli");
+    render_rows(s_body, 110, confirm, 2, m->sel, 0);
+    hint(B_CLICK(STR_HINT_OK), P_CLICK(STR_HINT_CHOOSE));
 }
 
 static void render_settings(const app_model_t *m)
 {
     const bd_config_t *cfg = storage_config();
-    char buf[6][40];
+    char buf[6][48];
     const char *items[6];
 
-    snprintf(buf[0], sizeof(buf[0]), "Volume: %d%%", m->volume);
-    snprintf(buf[1], sizeof(buf[1]), "Mic: %d dB", m->mic_gain_db);
-    snprintf(buf[2], sizeof(buf[2]), "Wi-Fi: %s",
+    /* Label and value are composed here rather than carried in one format
+     * string per row: a translation cannot then lose a %d and take the render
+     * down with it. */
+    snprintf(buf[0], sizeof(buf[0]), "%s: %d%%", tr(STR_SET_VOLUME), m->volume);
+    snprintf(buf[1], sizeof(buf[1]), "%s: %d dB", tr(STR_SET_MIC), m->mic_gain_db);
+    snprintf(buf[2], sizeof(buf[2]), "%s: %s", tr(STR_SET_WIFI),
              m->net == NET_CONNECTED ? net_ip_str() :
-             m->net == NET_CONNECTING ? "in corso" :
-             cfg->wifi_ssid[0] ? "assente" : "non conf.");
-    snprintf(buf[3], sizeof(buf[3]), "microSD: %s", m->sd_ok ? "ok" : "riprova");
-    snprintf(buf[4], sizeof(buf[4]), "Ricarica config");
-    snprintf(buf[5], sizeof(buf[5]), "Spegni");
+             m->net == NET_CONNECTING ? tr(STR_WIFI_CONNECTING) :
+             cfg->wifi_ssid[0] ? tr(STR_WIFI_ABSENT) : tr(STR_WIFI_UNSET));
+    snprintf(buf[3], sizeof(buf[3]), "%s: %s", tr(STR_SET_SD),
+             m->sd_ok ? tr(STR_OK) : tr(STR_RETRY));
+    snprintf(buf[4], sizeof(buf[4]), "%s", tr(STR_SET_RELOAD_CFG));
+    snprintf(buf[5], sizeof(buf[5]), "%s", tr(STR_SET_POWER_OFF));
     for (int i = 0; i < 6; i++) {
         items[i] = buf[i];
     }
 
-    header("Impostazioni");
+    header(tr(STR_MENU_SETTINGS));
     render_rows(s_body, LIST_Y, items, 6, m->sel, m->top);
-    hint(B_CLICK " cambia", P_CLICK " scorri");
+    hint(B_CLICK(STR_HINT_CHANGE), P_CLICK(STR_HINT_SCROLL));
 }
 
 static void render_info(const app_model_t *m)
@@ -607,9 +657,9 @@ static void render_info(const app_model_t *m)
      * screen you open to ask how the device is doing, and it is the one place
      * with room to say it at a size worth reading. */
     if (isnan(m->temp_c)) {
-        snprintf(env, sizeof(env), "n/d");
+        snprintf(env, sizeof(env), "%s", tr(STR_NOT_AVAILABLE));
     } else {
-        snprintf(env, sizeof(env), "%d\xC2\xB0""C  %d%% UR", (int)lroundf(m->temp_c),
+        snprintf(env, sizeof(env), tr(STR_ENV_FMT), (int)lroundf(m->temp_c),
                  isnan(m->humidity) ? 0 : (int)lroundf(m->humidity));
     }
 
@@ -618,37 +668,31 @@ static void render_info(const app_model_t *m)
     snprintf(buf, sizeof(buf),
              "Brain Dumper\n"
              "ESP32-S3 N8R8\n"
-             "SD: %s\n"
-             "Liberi: %llu MB\n"
-             "IP: %s\n"
-             "Batt: %.2f V\n"
-             "Clima: %s",
-             m->sd_ok ? "ok" : "assente",
-             (unsigned long long)freemb,
-             net_ip_str(),
-             board_battery_voltage(),
-             env);
+             "%s: %s\n"
+             "%s: %llu MB\n"
+             "%s: %s\n"
+             "%s: %.2f V\n"
+             "%s: %s",
+             tr(STR_INFO_SD), m->sd_ok ? tr(STR_OK) : tr(STR_ABSENT),
+             tr(STR_INFO_FREE), (unsigned long long)freemb,
+             tr(STR_INFO_IP), net_ip_str(),
+             tr(STR_INFO_BATT), board_battery_voltage(),
+             tr(STR_INFO_CLIMATE), env);
 
     lv_obj_t *l = text(s_body, buf, s_font_ui);
     lv_label_set_long_mode(l, LV_LABEL_LONG_MODE_WRAP);
     lv_obj_set_width(l, lv_pct(100));
     lv_obj_align(l, LV_ALIGN_TOP_LEFT, 3, 4);
-    hint(B_DOUBLE " esci", "");
+    hint(B_DOUBLE(STR_HINT_BACK), "");
 }
 
 static void render_transfer(const app_model_t *m)
 {
     (void)m;
-    centered(s_body, "TRASFERIMENTO", s_font_ui, 12);
+    centered(s_body, tr(STR_TRANSFER_TITLE), s_font_ui, 12);
     separator(s_body, 36);
-    centered(s_body,
-             "La microSD e' ora\n"
-             "un disco USB.\n\n"
-             "Espellila dal PC,\n"
-             "poi premi BOOT\n"
-             "per riavviare.",
-             s_font_small, 48);
-    hint(B_CLICK " riavvia", "");
+    centered(s_body, tr(STR_TRANSFER_BODY), s_font_small, 48);
+    hint(B_CLICK(STR_HINT_REBOOT), "");
 }
 
 /*

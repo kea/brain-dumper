@@ -17,6 +17,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "i18n.h"
 #include "net.h"
 #include "notes.h"
 #include "pcf85063.h"
@@ -114,6 +115,9 @@ void app_main(void)
     ESP_ERROR_CHECK(storage_init());
 
     const bd_config_t *cfg = storage_config();
+    /* Before the UI exists, so the first frame is already in the user's
+     * language rather than in English for one redraw. */
+    i18n_set_lang(cfg->ui_lang);
     if (cfg->timezone[0]) {
         setenv("TZ", cfg->timezone, 1);
         tzset();

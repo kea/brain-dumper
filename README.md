@@ -65,6 +65,7 @@ and **never overwrites an existing file**. A reference copy is in
 | `stt_url` | OpenAI-compatible transcription endpoint |
 | `stt_model` | model name passed to that endpoint |
 | `stt_lang` | ISO 639-1 code, empty for autodetect |
+| `lang` | interface language: `en`, `fr`, `de`, `es`, `it` |
 | `stt_key` | bearer token, if your server wants one |
 | `timezone` | POSIX TZ string, e.g. `CET-1CEST,M3.5.0,M10.5.0/3` |
 | `ntp_server` | defaults to `pool.ntp.org` |
@@ -75,6 +76,37 @@ and **never overwrites an existing file**. A reference copy is in
 
 To edit it without a card reader, use **Menu → USB transfer**: the microSD
 appears on your PC as a disk. Eject it there, then press BOOT to reboot.
+
+### Language
+
+`lang=` sets one language for both the device screens and the web page, out of
+**English, French, German, Spanish and Italian**. An unrecognised code falls
+back to English, and a locale tail is tolerated — `de`, `de_DE` and `de-DE` all
+mean German. The build-time default is `it` (`idf.py menuconfig` → *Brain
+Dumper*).
+
+It is deliberately separate from `stt_lang`, which tells the transcription
+server what language the *audio* is in: dictating in Italian to a device you
+read in English is a reasonable thing to want.
+
+*Settings → Reload config* re-reads the file and switches language on the spot,
+so trying the five costs a card edit and one button press rather than a reboot.
+
+Two things stay in one language on purpose:
+
+- **Note tags** are written to the card as `Inbox`, `Idea`, `Todo`, `Work` and
+  `Personal` whatever the device is set to, and only their display is
+  translated. A card written on a German device still reads correctly on a
+  Spanish one, and a script parsing the `.ini` files has one set of names to
+  know. A tag it does not recognise — hand-edited, or from an older build — is
+  shown exactly as written.
+- **Logs** over the serial console are English, because that is what a stack
+  trace pasted into a bug report should be.
+
+Adding a sixth language is one table in
+[`components/i18n/lang/`](components/i18n/lang/) plus its entry in `LANGS[]`,
+and one more object in the page's `I18N` map. Every id missing from a table
+falls through to English rather than rendering blank.
 
 ### Transcription backend
 
@@ -104,9 +136,12 @@ at **`/sdcard/font.ttf`** (under 512 KB) and transcripts, note titles and list
 rows are rendered in full UTF-8 instead. The reference build uses
 **`DejaVuSansCondensed.ttf`** — see [Credits](#credits).
 
-Without that file the display folds accents down to ASCII (`perché` →
-`perche'`) as a rendering fallback only; the `.txt` on the card always keeps
-the original UTF-8.
+Without that file the display folds accents down to ASCII as a rendering
+fallback only; the `.txt` on the card always keeps the original UTF-8. The fold
+follows the language, because the conventions do not agree: Italian gets
+`perché` → `perche'`, German gets `Löschen` → `Loeschen`, and everywhere else
+the accent is simply dropped. This applies to menu labels as much as to
+transcripts — a German menu needs the same coverage a German note does.
 
 ## Controls
 
@@ -132,6 +167,10 @@ While the device is awake and on your network it serves a small page at
 **`http://<its-ip>/`**. The address is on the device itself, under *Menu →
 Info*.
 
+The page speaks the device's language, not the phone's: `/api/status` reports
+which one, and the page follows it, so the glass and the browser never disagree.
+Only the weekday names come from the browser's own locale data.
+
 The page is the list of notes, each with its transcript, a player, a WAV and a
 TXT download, and a delete. The header is the device's own status bar — clock,
 battery, signal, free space, ambient reading, transcription queue — so opening
@@ -155,7 +194,7 @@ would use:
 
 | | |
 |---|---|
-| `GET /api/status` | battery, radio, card, queue, sensors, uptime |
+| `GET /api/status` | battery, radio, card, queue, sensors, uptime, language |
 | `GET /api/notes` | the catalogue, newest first |
 | `GET /api/notes/<id>` | one entry |
 | `GET /api/notes/<id>/text` | the transcript, UTF-8 |
@@ -206,6 +245,7 @@ components/
   ui_port/     LVGL 9 bound to the panel in I1 (1 bpp)
   periph/      PCF85063 (RTC + countdown), SHTC3
   storage/     SD mount, config.ini parser, note catalogue
+  i18n/        interface strings for en/fr/de/es/it, ASCII folding rules
   audio/       ES8311 capture to WAV, playback, VU metering
   net/         Wi-Fi STA, SNTP, STT client
   web/         LAN HTTP server, JSON API, the page embedded in flash

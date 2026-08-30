@@ -20,6 +20,8 @@
  */
 
 #define NOTE_TAG_MAX    24
+#define NOTE_TAGS_MAX   8       /* ceiling on NOTE_TAG_COUNT, so callers can
+                                 * size a stack array without a VLA */
 #define NOTE_TITLE_MAX  56
 #define NOTE_PATH_MAX   64
 #define NOTES_MAX       512
@@ -43,7 +45,14 @@ typedef struct {
     char       title[NOTE_TITLE_MAX];   /* first line of the transcript */
 } note_t;
 
-/* Tags the UI offers; the first one is the default. */
+/*
+ * Tags the UI offers; the first one is the default.
+ *
+ * These are the canonical names, and they are what lands in the .ini on the
+ * card: a note keeps the same tag whatever language the device is set to, and
+ * a card written in German still reads correctly on a device set to Spanish.
+ * i18n_tag() turns one into the word the user sees.
+ */
 extern const char *const NOTE_TAGS[];
 extern const int         NOTE_TAG_COUNT;
 

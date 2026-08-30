@@ -34,6 +34,7 @@ static void load_defaults(bd_config_t *cfg)
     snprintf(cfg->stt_url, sizeof(cfg->stt_url), "%s", CONFIG_BD_STT_URL);
     snprintf(cfg->stt_model, sizeof(cfg->stt_model), "%s", CONFIG_BD_STT_MODEL);
     snprintf(cfg->stt_lang, sizeof(cfg->stt_lang), "%s", CONFIG_BD_STT_LANGUAGE);
+    snprintf(cfg->ui_lang, sizeof(cfg->ui_lang), "%s", CONFIG_BD_UI_LANGUAGE);
     snprintf(cfg->timezone, sizeof(cfg->timezone), "%s", CONFIG_BD_TIMEZONE);
     snprintf(cfg->ntp_server, sizeof(cfg->ntp_server), "%s", CONFIG_BD_NTP_SERVER);
     cfg->idle_sleep_s = CONFIG_BD_IDLE_SLEEP_S;
@@ -95,6 +96,7 @@ static esp_err_t parse_config(void)
         else if (!strcmp(key, "stt_key"))           assign(s_cfg.stt_key, sizeof(s_cfg.stt_key), val);
         else if (!strcmp(key, "stt_model"))         assign(s_cfg.stt_model, sizeof(s_cfg.stt_model), val);
         else if (!strcmp(key, "stt_lang"))          assign(s_cfg.stt_lang, sizeof(s_cfg.stt_lang), val);
+        else if (!strcmp(key, "lang"))              assign(s_cfg.ui_lang, sizeof(s_cfg.ui_lang), val);
         else if (!strcmp(key, "timezone"))          assign(s_cfg.timezone, sizeof(s_cfg.timezone), val);
         else if (!strcmp(key, "ntp_server"))        assign(s_cfg.ntp_server, sizeof(s_cfg.ntp_server), val);
         else if (!strcmp(key, "idle_sleep_s"))      s_cfg.idle_sleep_s = (uint32_t)strtoul(val, NULL, 10);
@@ -138,6 +140,10 @@ esp_err_t storage_write_default_config(void)
         "stt_lang=%s\n"
         "#stt_key=\n"
         "\n"
+        "# Interface language, on the device and in the web UI:\n"
+        "# en, fr, de, es, it. Anything else falls back to English.\n"
+        "lang=%s\n"
+        "\n"
         "timezone=%s\n"
         "ntp_server=%s\n"
         "\n"
@@ -152,7 +158,7 @@ esp_err_t storage_write_default_config(void)
         "# There is no password: 0 turns it off.\n"
         "web_enable=%u\n",
         s_cfg.wifi_ssid, s_cfg.wifi_pass, s_cfg.stt_url, s_cfg.stt_model,
-        s_cfg.stt_lang, s_cfg.timezone, s_cfg.ntp_server,
+        s_cfg.stt_lang, s_cfg.ui_lang, s_cfg.timezone, s_cfg.ntp_server,
         (unsigned)s_cfg.idle_sleep_s, (unsigned)s_cfg.wake_interval_min,
         (unsigned)s_cfg.max_record_s, (unsigned)s_cfg.web_enable);
     fclose(f);

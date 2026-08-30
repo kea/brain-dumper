@@ -93,3 +93,7 @@ CONFIG_BD_WIFI_SSID=""
 CONFIG_BD_WIFI_PASSWORD=""
 CONFIG_BD_STT_URL="http://192.168.1.10:8000/v1/audio/transcriptions"
 CONFIG_BD_STT_MODEL="Systran/faster-whisper-medium"
+
+# Lingua dell'interfaccia: en, fr, de, es, it. Indipendente da CONFIG_BD_STT_LANGUAGE,
+# che dice al server di trascrizione in che lingua e' l'audio.
+CONFIG_BD_UI_LANGUAGE="it"

@@ -19,6 +19,7 @@
 #include "esp_netif.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
+#include "i18n.h"
 #include "net.h"
 #include "notes.h"
 #include "shtc3.h"
@@ -326,9 +327,9 @@ static esp_err_t status_get(httpd_req_t *req)
     char ssid[BD_CFG_SSID_MAX * 6 + 1];
     json_escape(cfg->wifi_ssid, ssid, sizeof(ssid));
 
-    char body[768];
+    char body[832];
     int n = snprintf(body, sizeof(body),
-        "{\"version\":\"%s\",\"uptime_s\":%lld,\"time\":%lld,\"tz_offset_s\":%ld,"
+        "{\"version\":\"%s\",\"lang\":\"%s\",\"uptime_s\":%lld,\"time\":%lld,\"tz_offset_s\":%ld,"
         "\"battery_pct\":%u,\"battery_v\":%.2f,\"usb_power\":%s,"
         "\"wifi\":{\"ssid\":\"%s\",\"ip\":\"%s\",\"rssi\":%d},"
         "\"sd\":{\"mounted\":%s,\"free_bytes\":%llu},"
@@ -336,6 +337,7 @@ static esp_err_t status_get(httpd_req_t *req)
         "\"temp_c\":%s,\"humidity\":%s,\"audio\":\"%s\","
         "\"max_record_s\":%u,\"heap_free\":%u}",
         app ? app->version : "?",
+        i18n_lang_code(),
         (long long)(esp_timer_get_time() / 1000000),
         (long long)now, tz_offset,
         board_battery_percent(), board_battery_voltage(),

@@ -25,6 +25,17 @@ menu "Brain Dumper"
         string "Default transcription language (ISO 639-1, empty = autodetect)"
         default "it"
 
+    config BD_UI_LANGUAGE
+        string "Default interface language (en, fr, de, es, it)"
+        default "it"
+        help
+            Language of the on-device screens and of the web UI. Overridden by
+            `lang=` in /sdcard/config.ini. An unknown code falls back to
+            English.
+
+            This is independent of BD_STT_LANGUAGE, which tells the
+            transcription service what language the audio is in.
+
     config BD_TIMEZONE
         string "POSIX timezone string"
         default "CET-1CEST,M3.5.0,M10.5.0/3"

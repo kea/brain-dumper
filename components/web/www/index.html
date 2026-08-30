@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="it">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -153,11 +153,11 @@ footer{
 <body>
 <div class="wrap">
 
-  <button class="bar mono" id="bar" aria-label="Stato del dispositivo, tocca per aggiornare">
+  <button class="bar mono" id="bar">
     <span class="brand"><b>Brain&nbsp;Dumper</b><span id="ver"></span></span>
     <div class="clock" id="clock">--:--</div>
-    <div class="vitals" id="vitals">in ascolto&hellip;</div>
-    <div class="hint">tocca per aggiornare</div>
+    <div class="vitals" id="vitals">&hellip;</div>
+    <div class="hint" id="barhint"></div>
   </button>
 
   <main id="main"></main>
@@ -168,7 +168,158 @@ footer{
 <script>
 "use strict";
 const $ = (s, r) => (r || document).querySelector(s);
-const el = (t, c) => { const e = document.createElement(t); if (c) e.className = c; return e; };
+const el = (name, c) => { const e = document.createElement(name); if (c) e.className = c; return e; };
+
+/*
+ * The five languages the firmware ships, carried here rather than fetched: the
+ * page has to work on a phone whose only network is this device. The device
+ * reports its own choice as `lang` in /api/status, so the screen and the page
+ * always agree, and English backs up any key a table is missing.
+ *
+ * Day and month names come from Intl instead of from these tables - the
+ * browser already knows them in every locale, and getting them from it is 35
+ * strings we do not have to keep correct.
+ */
+const I18N = {
+  en: {
+    bar_aria: "Device status, tap to refresh", tap: "tap to refresh",
+    batt: "batt {0}%", charging: "charging", offline: "offline", dbm: "{0} dbm",
+    sd_free: "sd {0} free", sd_absent: "no sd", queue: "queue {0}",
+    recording: "recording", playing: "playing", unreachable: "unreachable",
+    today: "today", yesterday: "yesterday",
+    none_title: "No notes on the card.",
+    none_body: "Hold BOOT on the device and talk.",
+    n_one: "{0} note", n_many: "{0} notes", scale: "scale 0\u2013{0}",
+    queued: "queued", stt_err: "stt error", note: "Note {0}",
+    play_aria: "Play note {0}",
+    audio_title: "The device did not send the audio.",
+    audio_body: "It may be recording: the card is its own while that lasts.",
+    text_bad: "Transcript unreadable.",
+    p_failed: "The transcription server answered with an error. The note stays on the card.",
+    p_skipped: "Transcription skipped.",
+    p_pending: "Queued. The device sends it as soon as it finds the network.",
+    pause: "pause", listen: "listen", del: "delete", del_ask: "sure?",
+    del_title: "Could not delete the note.", retry: "retry",
+    no_ssid: "unknown network", updated: "updated at {0}", uptime: "up {0} min",
+    down_title: "The device is not answering.",
+    down_body: "Most likely it is asleep to save battery. Press a button and try again.",
+    tags: { Inbox: "Inbox", Idea: "Idea", Todo: "Todo", Work: "Work", Personal: "Personal" },
+  },
+  fr: {
+    bar_aria: "\u00c9tat de l'appareil, touchez pour actualiser", tap: "touchez pour actualiser",
+    batt: "batt {0}%", charging: "en charge", offline: "hors ligne", dbm: "{0} dbm",
+    sd_free: "sd {0} libres", sd_absent: "sd absente", queue: "file {0}",
+    recording: "enregistre", playing: "lecture", unreachable: "injoignable",
+    today: "aujourd'hui", yesterday: "hier",
+    none_title: "Aucune note sur la carte.",
+    none_body: "Maintenez BOOT sur l'appareil et parlez.",
+    n_one: "{0} note", n_many: "{0} notes", scale: "\u00e9chelle 0\u2013{0}",
+    queued: "en file", stt_err: "erreur stt", note: "Note {0}",
+    play_aria: "Lire la note {0}",
+    audio_title: "L'appareil n'a pas envoy\u00e9 l'audio.",
+    audio_body: "Il enregistre peut-\u00eatre : la carte est \u00e0 lui pendant ce temps.",
+    text_bad: "Transcription illisible.",
+    p_failed: "Le serveur de transcription a r\u00e9pondu par une erreur. La note reste sur la carte.",
+    p_skipped: "Transcription ignor\u00e9e.",
+    p_pending: "En file. L'appareil l'envoie d\u00e8s qu'il trouve le r\u00e9seau.",
+    pause: "pause", listen: "\u00e9couter", del: "supprimer", del_ask: "confirmer ?",
+    del_title: "Impossible de supprimer la note.", retry: "r\u00e9essayer",
+    no_ssid: "r\u00e9seau inconnu", updated: "actualis\u00e9 \u00e0 {0}", uptime: "actif {0} min",
+    down_title: "L'appareil ne r\u00e9pond pas.",
+    down_body: "Il dort sans doute pour \u00e9conomiser la batterie. Appuyez sur un bouton et r\u00e9essayez.",
+    tags: { Inbox: "Bo\u00eete", Idea: "Id\u00e9e", Todo: "\u00c0 faire", Work: "Travail", Personal: "Perso" },
+  },
+  de: {
+    bar_aria: "Ger\u00e4testatus, zum Aktualisieren tippen", tap: "zum Aktualisieren tippen",
+    batt: "akku {0}%", charging: "l\u00e4dt", offline: "offline", dbm: "{0} dbm",
+    sd_free: "sd {0} frei", sd_absent: "keine sd", queue: "warteschlange {0}",
+    recording: "nimmt auf", playing: "spielt", unreachable: "nicht erreichbar",
+    today: "heute", yesterday: "gestern",
+    none_title: "Keine Notizen auf der Karte.",
+    none_body: "BOOT am Ger\u00e4t gedr\u00fcckt halten und sprechen.",
+    n_one: "{0} Notiz", n_many: "{0} Notizen", scale: "Skala 0\u2013{0}",
+    queued: "in warteschlange", stt_err: "stt-fehler", note: "Notiz {0}",
+    play_aria: "Notiz {0} abspielen",
+    audio_title: "Das Ger\u00e4t hat kein Audio geschickt.",
+    audio_body: "Vielleicht nimmt es gerade auf: dann geh\u00f6rt die Karte ihm.",
+    text_bad: "Transkript nicht lesbar.",
+    p_failed: "Der Transkriptionsserver hat einen Fehler gemeldet. Die Notiz bleibt auf der Karte.",
+    p_skipped: "Transkription \u00fcbersprungen.",
+    p_pending: "In der Warteschlange. Das Ger\u00e4t sendet sie, sobald es Netz hat.",
+    pause: "pause", listen: "anh\u00f6ren", del: "l\u00f6schen", del_ask: "sicher?",
+    del_title: "Notiz konnte nicht gel\u00f6scht werden.", retry: "erneut",
+    no_ssid: "unbekanntes Netz", updated: "aktualisiert um {0}", uptime: "l\u00e4uft {0} min",
+    down_title: "Das Ger\u00e4t antwortet nicht.",
+    down_body: "Wahrscheinlich schl\u00e4ft es, um Strom zu sparen. Taste dr\u00fccken und erneut versuchen.",
+    tags: { Inbox: "Eingang", Idea: "Idee", Todo: "Todo", Work: "Arbeit", Personal: "Privat" },
+  },
+  es: {
+    bar_aria: "Estado del dispositivo, toca para actualizar", tap: "toca para actualizar",
+    batt: "bat {0}%", charging: "cargando", offline: "sin red", dbm: "{0} dbm",
+    sd_free: "sd {0} libres", sd_absent: "sin sd", queue: "cola {0}",
+    recording: "grabando", playing: "reproduciendo", unreachable: "no accesible",
+    today: "hoy", yesterday: "ayer",
+    none_title: "No hay notas en la tarjeta.",
+    none_body: "Mant\u00e9n pulsado BOOT en el dispositivo y habla.",
+    n_one: "{0} nota", n_many: "{0} notas", scale: "escala 0\u2013{0}",
+    queued: "en cola", stt_err: "error stt", note: "Nota {0}",
+    play_aria: "Reproducir la nota {0}",
+    audio_title: "El dispositivo no envi\u00f3 el audio.",
+    audio_body: "Puede estar grabando: en ese momento la tarjeta es suya.",
+    text_bad: "Transcripci\u00f3n ilegible.",
+    p_failed: "El servidor de transcripci\u00f3n respondi\u00f3 con un error. La nota sigue en la tarjeta.",
+    p_skipped: "Transcripci\u00f3n omitida.",
+    p_pending: "En cola. El dispositivo la env\u00eda en cuanto encuentra la red.",
+    pause: "pausa", listen: "escuchar", del: "eliminar", del_ask: "\u00bfseguro?",
+    del_title: "No se pudo eliminar la nota.", retry: "reintentar",
+    no_ssid: "red desconocida", updated: "actualizado a las {0}", uptime: "activo {0} min",
+    down_title: "El dispositivo no responde.",
+    down_body: "Lo m\u00e1s probable es que est\u00e9 durmiendo para ahorrar bater\u00eda. Pulsa un bot\u00f3n y reintenta.",
+    tags: { Inbox: "Bandeja", Idea: "Idea", Todo: "Tareas", Work: "Trabajo", Personal: "Personal" },
+  },
+  it: {
+    bar_aria: "Stato del dispositivo, tocca per aggiornare", tap: "tocca per aggiornare",
+    batt: "batt {0}%", charging: "in carica", offline: "offline", dbm: "{0} dbm",
+    sd_free: "sd {0} liberi", sd_absent: "sd assente", queue: "coda {0}",
+    recording: "sta registrando", playing: "in riproduzione", unreachable: "non raggiungibile",
+    today: "oggi", yesterday: "ieri",
+    none_title: "Nessuna nota sulla scheda.",
+    none_body: "Tieni premuto il tasto BOOT sul dispositivo e parla.",
+    n_one: "{0} nota", n_many: "{0} note", scale: "scala 0\u2013{0}",
+    queued: "in coda", stt_err: "errore stt", note: "Nota {0}",
+    play_aria: "Riproduci la nota {0}",
+    audio_title: "Il dispositivo non ha mandato l'audio.",
+    audio_body: "Pu\u00f2 darsi che stia registrando: in quel momento la scheda \u00e8 sua.",
+    text_bad: "Trascrizione non leggibile.",
+    p_failed: "Il server di trascrizione ha risposto con un errore. La nota resta sulla scheda.",
+    p_skipped: "Trascrizione saltata.",
+    p_pending: "In coda. Il dispositivo la manda al server appena trova la rete.",
+    pause: "pausa", listen: "ascolta", del: "elimina", del_ask: "confermi?",
+    del_title: "Non ho potuto eliminare la nota.", retry: "riprova",
+    no_ssid: "rete sconosciuta", updated: "aggiornato alle {0}", uptime: "attivo da {0} min",
+    down_title: "Il dispositivo non risponde.",
+    down_body: "Con ogni probabilit\u00e0 sta dormendo per risparmiare batteria. Premi un tasto e riprova.",
+    tags: { Inbox: "Inbox", Idea: "Idea", Todo: "Todo", Work: "Lavoro", Personal: "Personale" },
+  },
+};
+
+let lang = "en";
+const t = (k, ...a) => {
+  const s = (I18N[lang] && I18N[lang][k]) || I18N.en[k] || k;
+  return a.reduce((out, v, i) => out.split("{" + i + "}").join(v), s);
+};
+/* Tags are stored on the card in their canonical English form, exactly as the
+   device stores them; only the display is translated. Anything unrecognised -
+   a hand-edited .ini - is shown as it was written. */
+const tag = (name) => (I18N[lang].tags && I18N[lang].tags[name]) || name;
+
+function setLang(code) {
+  const two = String(code || "en").slice(0, 2).toLowerCase();
+  lang = I18N[two] ? two : "en";
+  document.documentElement.lang = lang;
+  $("#bar").setAttribute("aria-label", t("bar_aria"));
+  $("#barhint").textContent = t("tap");
+}
 
 let status = null, notes = [], open = 0, scaleMs = 60000;
 const audio = new Audio();
@@ -183,14 +334,18 @@ const hhmm = (d) => p2(d.getUTCHours()) + ":" + p2(d.getUTCMinutes());
 const dur = (ms) => { const s = Math.round(ms / 1000); return Math.floor(s / 60) + ":" + p2(s % 60); };
 const gb = (b) => b >= 1e9 ? (b / 1e9).toFixed(1) + " GB" : Math.round(b / 1e6) + " MB";
 
-const DAYS = ["dom", "lun", "mar", "mer", "gio", "ven", "sab"];
+/* The epoch was already shifted into device time, so the fields to format are
+   the UTC ones - hence timeZone:"UTC" rather than the phone's zone. */
+const weekday = (d) =>
+  new Intl.DateTimeFormat(lang, { weekday: "short", timeZone: "UTC" }).format(d);
+
 function dayLabel(epoch) {
   const d = local(epoch), now = local(status ? status.time : epoch);
   const key = (x) => x.getUTCFullYear() * 1e4 + x.getUTCMonth() * 100 + x.getUTCDate();
-  if (key(d) === key(now)) return "oggi";
+  if (key(d) === key(now)) return t("today");
   const y = new Date(now.getTime() - 864e5);
-  if (key(d) === key(y)) return "ieri";
-  return DAYS[d.getUTCDay()] + " " + p2(d.getUTCDate()) + "/" + p2(d.getUTCMonth() + 1);
+  if (key(d) === key(y)) return t("yesterday");
+  return weekday(d) + " " + p2(d.getUTCDate()) + "/" + p2(d.getUTCMonth() + 1);
 }
 
 /* ---------------- header ---------------- */
@@ -202,12 +357,12 @@ function drawStatus() {
     p2(now.getUTCMonth() + 1) + "</small>";
 
   const bits = [];
-  bits.push("batt " + status.battery_pct + "%" + (status.usb_power ? " in carica" : ""));
-  bits.push(status.wifi.ip !== "0.0.0.0" ? status.wifi.rssi + " dbm" : "offline");
-  bits.push(status.sd.mounted ? "sd " + gb(status.sd.free_bytes) + " liberi" : "sd assente");
+  bits.push(t("batt", status.battery_pct) + (status.usb_power ? " " + t("charging") : ""));
+  bits.push(status.wifi.ip !== "0.0.0.0" ? t("dbm", status.wifi.rssi) : t("offline"));
+  bits.push(status.sd.mounted ? t("sd_free", gb(status.sd.free_bytes)) : t("sd_absent"));
   if (status.temp_c !== null) bits.push(Math.round(status.temp_c) + "°c " + Math.round(status.humidity) + "%");
-  if (status.notes.pending) bits.push("coda " + status.notes.pending);
-  if (status.audio !== "idle") bits.push(status.audio === "recording" ? "sta registrando" : "in riproduzione");
+  if (status.notes.pending) bits.push(t("queue", status.notes.pending));
+  if (status.audio !== "idle") bits.push(t(status.audio === "recording" ? "recording" : "playing"));
   $("#vitals").innerHTML = bits.join('<i>·</i>');
 }
 
@@ -217,15 +372,14 @@ function drawList() {
   main.textContent = "";
 
   if (!notes.length) {
-    main.append(message("Nessuna nota sulla scheda.",
-      "Tieni premuto il tasto BOOT sul dispositivo e parla.", null));
+    main.append(message(t("none_title"), t("none_body"), null));
     return;
   }
 
   scaleMs = Math.max(60000, ...notes.map(n => n.duration_ms));
   const head = el("div", "scale mono");
-  head.innerHTML = "<span>" + notes.length + (notes.length === 1 ? " nota" : " note") +
-    "</span><hr><span>scala 0–" + dur(scaleMs) + "</span>";
+  head.innerHTML = "<span>" + esc(t(notes.length === 1 ? "n_one" : "n_many", notes.length)) +
+    "</span><hr><span>" + esc(t("scale", dur(scaleMs))) + "</span>";
   main.append(head);
 
   let list = null, day = null;
@@ -250,14 +404,14 @@ function row(n) {
   const meta = el("div", "meta mono");
   meta.innerHTML = '<span class="id">' + String(n.id).padStart(4, "0") + "</span>" +
     "<span>" + hhmm(local(n.created)) + "</span>" +
-    "<span>" + esc(n.tag) + '</span><span class="grow"></span>';
-  if (n.stt === "pending") meta.append(flag("in coda", "wait"));
-  else if (n.stt === "failed") meta.append(flag("errore stt", "bad"));
+    "<span>" + esc(tag(n.tag)) + '</span><span class="grow"></span>';
+  if (n.stt === "pending") meta.append(flag(t("queued"), "wait"));
+  else if (n.stt === "failed") meta.append(flag(t("stt_err"), "bad"));
   head.append(meta);
 
-  const t = el("div", "title");
-  t.textContent = n.title || "Nota " + n.id;
-  head.append(t);
+  const ttl = el("div", "title");
+  ttl.textContent = n.title || t("note", n.id);
+  head.append(ttl);
   head.onclick = () => { open = open === n.id ? 0 : n.id; drawList(); };
   li.append(head);
 
@@ -277,7 +431,7 @@ function flag(text, kind) {
    once it is playing, where you are in it. Tapping it seeks. */
 function track(n) {
   const b = el("button", "track");
-  b.setAttribute("aria-label", "Riproduci la nota " + n.id);
+  b.setAttribute("aria-label", t("play_aria", n.id));
   const bar = el("div", "bar2");
   const fill = el("i");
   fill.style.width = pct(n) + "%";
@@ -310,8 +464,7 @@ function play(n, from) {
   audio.src = "/api/notes/" + n.id + "/audio";
   playing = n.id;
   audio.play().then(() => { if (from) audio.currentTime = from; })
-    .catch(() => { playing = 0; banner("Il dispositivo non ha mandato l'audio.",
-      "Pu\u00f2 darsi che stia registrando: in quel momento la scheda \u00e8 sua."); });
+    .catch(() => { playing = 0; banner(t("audio_title"), t("audio_body")); });
   drawList();
 }
 
@@ -326,26 +479,23 @@ audio.onended = () => { playing = 0; drawList(); };
 /* ---------------- expanded panel ---------------- */
 function panel(n) {
   const box = el("div", "body");
-  const t = el("p", "text");
-  box.append(t);
+  const body = el("p", "text");
+  box.append(body);
 
   if (n.has_text) {
-    t.textContent = "…";
+    body.textContent = "…";
     fetch("/api/notes/" + n.id + "/text").then(r => r.text())
-      .then(s => { t.textContent = s.trim(); })
-      .catch(() => { t.className = "text none"; t.textContent = "Trascrizione non leggibile."; });
+      .then(s => { body.textContent = s.trim(); })
+      .catch(() => { body.className = "text none"; body.textContent = t("text_bad"); });
   } else {
-    t.className = "text none";
-    t.textContent = n.stt === "failed"
-      ? "Il server di trascrizione ha risposto con un errore. La nota resta sulla scheda."
-      : n.stt === "skipped"
-      ? "Trascrizione saltata."
-      : "In coda. Il dispositivo la manda al server appena trova la rete.";
+    body.className = "text none";
+    body.textContent = t(n.stt === "failed" ? "p_failed"
+                       : n.stt === "skipped" ? "p_skipped" : "p_pending");
   }
 
   const acts = el("div", "acts");
   const listen = el("button", "btn");
-  listen.textContent = playing === n.id && !audio.paused ? "pausa" : "ascolta";
+  listen.textContent = t(playing === n.id && !audio.paused ? "pause" : "listen");
   if (playing === n.id && !audio.paused) listen.classList.add("on");
   listen.onclick = () => {
     if (playing === n.id && !audio.paused) { audio.pause(); drawList(); }
@@ -364,12 +514,12 @@ function panel(n) {
   /* Two taps, the same as the device asks for: the second one is the confirm
      screen, not a dialog. */
   const del = el("button", "btn del");
-  del.textContent = "elimina";
+  del.textContent = t("del");
   del.onclick = () => {
     if (!del.classList.contains("on")) {
       del.classList.add("on");
-      del.textContent = "confermi?";
-      setTimeout(() => { del.classList.remove("on"); del.textContent = "elimina"; }, 4000);
+      del.textContent = t("del_ask");
+      setTimeout(() => { del.classList.remove("on"); del.textContent = t("del"); }, 4000);
       return;
     }
     remove(n);
@@ -401,7 +551,7 @@ function remove(n) {
       requestAnimationFrame(() => { li.style.height = "0px"; });
       setTimeout(drawList, 240);
     }, 180);
-  }).catch(e => banner("Non ho potuto eliminare la nota.", String(e.message || e)));
+  }).catch(e => banner(t("del_title"), String(e.message || e)));
 }
 
 /* ---------------- messages ---------------- */
@@ -422,7 +572,7 @@ function message(title, body, action) {
 function banner(title, body) {
   const main = $("#main");
   main.textContent = "";
-  main.append(message(title, body, "riprova"));
+  main.append(message(title, body, t("retry")));
 }
 
 const esc = (s) => String(s).replace(/[<&]/g, c => c === "<" ? "&lt;" : "&amp;");
@@ -440,21 +590,24 @@ async function load() {
       fetch("/api/notes").then(r => r.json()),
     ]);
     status = s; notes = n;
+    /* The page follows the device, not the phone: one language on the glass
+       and in the browser, and it can change under us on a config reload. */
+    setLang(s.lang);
     drawStatus();
     drawList();
     $("#foot").textContent = [
-      s.wifi.ssid || "rete sconosciuta", s.wifi.ip,
-      "aggiornato alle " + hhmm(local(s.time)),
-      "attivo da " + Math.floor(s.uptime_s / 60) + " min",
+      s.wifi.ssid || t("no_ssid"), s.wifi.ip,
+      t("updated", hhmm(local(s.time))),
+      t("uptime", Math.floor(s.uptime_s / 60)),
     ].join(" · ");
   } catch (e) {
-    $("#vitals").textContent = "non raggiungibile";
-    banner("Il dispositivo non risponde.",
-      "Con ogni probabilit\u00e0 sta dormendo per risparmiare batteria. Premi un tasto e riprova.");
+    $("#vitals").textContent = t("unreachable");
+    banner(t("down_title"), t("down_body"));
   }
 }
 
 $("#bar").onclick = load;
+setLang(navigator.language);   /* until the device says otherwise */
 load();
 </script>
 </body>

@@ -21,7 +21,7 @@ static const char *TAG = "notes";
 
 #define NOTES_DIR BD_SD_MOUNT_POINT "/notes"
 
-const char *const NOTE_TAGS[] = { "Inbox", "Idea", "Todo", "Lavoro", "Personale" };
+const char *const NOTE_TAGS[] = { "Inbox", "Idea", "Todo", "Work", "Personal" };
 const int NOTE_TAG_COUNT = sizeof(NOTE_TAGS) / sizeof(NOTE_TAGS[0]);
 
 static note_t         *s_notes;      /* PSRAM, newest first */
